@@ -64,7 +64,7 @@ wecom-cli doc smartsheet_add_records '{"docid": "DOCID", "sheet_id": "SHEETID", 
 更新一行或多行记录，单次必须在 500 行内。需提供 record_id（通过 `smartsheet_get_records` 获取）。
 
 ```bash
-wecom-cli doc smartsheet_update_records '{"docid": "DOCID", "sheet_id": "SHEETID", "records": [{"record_id": "RECORDID", "values": {"任务名称": [{"type": "text", "text": "更新后的内容"}]}}]}'
+wecom-cli doc smartsheet_update_records '{"docid": "DOCID", "sheet_id": "SHEETID", "key_type": "CELL_VALUE_KEY_TYPE_FIELD_ID", "records": [{"record_id": "RECORDID", "values": {"FIELDID": [{"type": "text", "text": "更新后的内容"}]}}]}'
 ```
 
 **注意**：创建时间、最后编辑时间、创建人、最后编辑人字段不可更新。
