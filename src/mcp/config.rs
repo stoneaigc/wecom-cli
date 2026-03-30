@@ -53,20 +53,23 @@ impl GetMcpConfigRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GetMcpConfigResponse {
-    pub errcode: i32,
-    pub errmsg: String,
     #[serde(default)]
-    pub list: Vec<McpConfigItem>,
+    pub errcode: i32,
+    pub errmsg: Option<String>,
+    #[serde(default)]
+    pub list: Option<Vec<McpConfigItem>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpConfigItem {
-    pub url: String,
+    pub url: Option<String>,
     #[serde(rename = "type")]
-    pub transport_type: String,
-    pub is_authed: bool,
-    pub biz_type: String,
+    pub transport_type: Option<String>,
+    pub is_authed: Option<bool>,
+    pub biz_type: Option<String>,
 }
+
+use super::error::{FetchMcpConfigError, GetMcpConfigHttpError};
 
 // ---------------------------------------------------------------------------
 // Signature
@@ -158,13 +161,13 @@ fn load_mcp_config_from_path(path: &std::path::Path, key: &[u8; 32]) -> Option<V
 /// Return the MCP config list, reading from local cache first; fall back to a network fetch.
 ///
 /// On a cache miss the remote result is automatically persisted to disk.
-pub async fn get_mcp_config() -> Result<GetMcpConfigResponse> {
+pub async fn get_mcp_config() -> Result<GetMcpConfigResponse, FetchMcpConfigError> {
     if let Some(list) = load_mcp_config() {
         tracing::debug!("Loaded MCP config from local cache");
         return Ok(GetMcpConfigResponse {
             errcode: 0,
-            errmsg: "ok (cached)".into(),
-            list,
+            errmsg: Some("ok (cached)".into()),
+            list: Some(list),
         });
     }
 
@@ -172,22 +175,26 @@ pub async fn get_mcp_config() -> Result<GetMcpConfigResponse> {
 }
 
 /// Always fetch the MCP config from the server, bypassing local cache, and persist the result.
-pub async fn fetch_mcp_config() -> Result<GetMcpConfigResponse> {
+pub async fn fetch_mcp_config() -> Result<GetMcpConfigResponse, FetchMcpConfigError> {
     let resp = fetch_mcp_config_from_server().await?;
-    save_mcp_config(&resp.list)?;
+    if let Some(ref list) = resp.list {
+        save_mcp_config(list)?;
+    }
     Ok(resp)
 }
 
 /// Send the actual HTTP request to the MCP config endpoint.
-async fn fetch_mcp_config_from_server() -> Result<GetMcpConfigResponse> {
+async fn fetch_mcp_config_from_server() -> Result<GetMcpConfigResponse, FetchMcpConfigError> {
     let request = GetMcpConfigRequest::build()?;
 
     let response = reqwest::Client::builder()
-        .build()?
+        .build()
+        .map_err(|e| FetchMcpConfigError::Other(e.into()))?
         .post(&constants::mcp_config_endpoint())
         .json(&request)
         .send()
-        .await?;
+        .await
+        .map_err(|e| FetchMcpConfigError::Other(e.into()))?;
 
     let status = response.status();
     if !status.is_success() {
@@ -198,13 +205,19 @@ async fn fetch_mcp_config_from_server() -> Result<GetMcpConfigResponse> {
         if body.is_empty() {
             body = "<Empty response body>".to_string();
         }
-        anyhow::bail!("get_mcp_config failed with status {status}: {body}");
+        return Err(FetchMcpConfigError::Http(GetMcpConfigHttpError {
+            status: status.as_u16(),
+            body,
+        }));
     }
 
-    let resp = response.json::<GetMcpConfigResponse>().await?;
+    let resp = response
+        .json::<GetMcpConfigResponse>()
+        .await
+        .map_err(|e| FetchMcpConfigError::Other(e.into()))?;
 
     if resp.errcode != 0 {
-        anyhow::bail!("获取 MCP 配置失败：[{}] {}", resp.errcode, resp.errmsg);
+        return Err(FetchMcpConfigError::Api(resp));
     }
 
     Ok(resp)
@@ -218,16 +231,16 @@ mod tests {
     fn sample_items() -> Vec<McpConfigItem> {
         vec![
             McpConfigItem {
-                url: "https://example.com/mcp/contact".into(),
-                transport_type: "streamable-http".into(),
-                is_authed: true,
-                biz_type: "contact".into(),
+                url: Some("https://example.com/mcp/contact".into()),
+                transport_type: Some("streamable-http".into()),
+                is_authed: Some(true),
+                biz_type: Some("contact".into()),
             },
             McpConfigItem {
-                url: "https://example.com/mcp/msg".into(),
-                transport_type: "streamable-http".into(),
-                is_authed: false,
-                biz_type: "msg".into(),
+                url: Some("https://example.com/mcp/msg".into()),
+                transport_type: Some("streamable-http".into()),
+                is_authed: Some(false),
+                biz_type: Some("msg".into()),
             },
         ]
     }
@@ -281,10 +294,13 @@ mod tests {
 
         let loaded = load_mcp_config_from_path(&path, &key).unwrap();
         assert_eq!(loaded.len(), 2);
-        assert_eq!(loaded[0].biz_type, "contact");
-        assert_eq!(loaded[0].url, "https://example.com/mcp/contact");
-        assert_eq!(loaded[1].biz_type, "msg");
-        assert!(!loaded[1].is_authed);
+        assert_eq!(loaded[0].biz_type.as_deref(), Some("contact"));
+        assert_eq!(
+            loaded[0].url.as_deref(),
+            Some("https://example.com/mcp/contact")
+        );
+        assert_eq!(loaded[1].biz_type.as_deref(), Some("msg"));
+        assert_eq!(loaded[1].is_authed, Some(false));
     }
 
     #[test]
@@ -327,10 +343,10 @@ mod tests {
         let key = crypto::generate_random_key();
 
         let items_v1 = vec![McpConfigItem {
-            url: "https://v1.example.com".into(),
-            transport_type: "streamable-http".into(),
-            is_authed: true,
-            biz_type: "v1".into(),
+            url: Some("https://v1.example.com".into()),
+            transport_type: Some("streamable-http".into()),
+            is_authed: Some(true),
+            biz_type: Some("v1".into()),
         }];
         save_mcp_config_to_path(&items_v1, &path, &key).unwrap();
 
@@ -339,7 +355,7 @@ mod tests {
 
         let loaded = load_mcp_config_from_path(&path, &key).unwrap();
         assert_eq!(loaded.len(), 2);
-        assert_eq!(loaded[0].biz_type, "contact");
+        assert_eq!(loaded[0].biz_type.as_deref(), Some("contact"));
     }
 
     #[test]

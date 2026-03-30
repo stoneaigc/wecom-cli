@@ -1,4 +1,5 @@
 pub(crate) mod config;
+pub(crate) mod error;
 
 use anyhow::Result;
 use rand::Rng;
@@ -7,13 +8,16 @@ use rand::Rng;
 pub async fn get_mcp_url(category: &str) -> Result<String> {
     let resp = config::get_mcp_config().await?;
 
-    let target = resp
-        .list
+    let list = resp.list.unwrap_or_default();
+    let target = list
         .iter()
-        .find(|item| item.biz_type == category)
+        .find(|item| item.biz_type.as_deref() == Some(category))
         .ok_or_else(|| anyhow::anyhow!("当前企业暂不支持 {category} 命令"))?;
 
-    Ok(target.url.clone())
+    target
+        .url
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("MCP 配置中 {category} 的 url 为空"))
 }
 
 /// Generate a request ID in the format: `{prefix}_{timestamp_ms}_{random_hex}`.

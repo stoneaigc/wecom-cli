@@ -44,19 +44,35 @@ pub async fn handle_init_cmd(matches: &ArgMatches) -> Result<()> {
     let spinner = cliclack::spinner();
     spinner.start("正在验证企业微信机器人凭证...");
 
-    match mcp::config::fetch_mcp_config().await {
-        Ok(_) => {
-            spinner.stop("企业微信机器人凭证验证成功");
-            cliclack::outro("初始化完成 ✅")?;
-            Ok(())
+    if let Err(e) = mcp::config::fetch_mcp_config().await {
+        spinner.stop("企业微信机器人凭证验证失败");
+
+        let mut output_errmsg: String = "验证企业微信机器人凭证失败".to_owned();
+
+        match &e {
+            mcp::error::FetchMcpConfigError::Api(resp) => {
+                if let Some(ref msg) = resp.errmsg {
+                    if !msg.is_empty() {
+                        output_errmsg = msg.clone();
+                    }
+                }
+            }
+            mcp::error::FetchMcpConfigError::Http(http_err) => {
+                output_errmsg = format!("{} HTTP返回状态码 {}", output_errmsg, http_err.status);
+            }
+            mcp::error::FetchMcpConfigError::Other(other_err) => {
+                output_errmsg = other_err.to_string();
+            }
         }
-        Err(e) => {
-            spinner.stop("企业微信机器人凭证验证失败");
-            // Credentials invalid or server unreachable — rollback
-            auth::clear_bot_info();
-            mcp::config::clear_mcp_config();
-            cliclack::outro("初始化失败 ❌")?;
-            anyhow::bail!("验证企业微信机器人凭证失败: {e}");
-        }
+
+        // Credentials invalid or server unreachable — rollback
+        auth::clear_bot_info();
+        mcp::config::clear_mcp_config();
+        cliclack::outro("初始化失败 ❌")?;
+        anyhow::bail!("\nError: {}", output_errmsg);
     }
+
+    spinner.stop("企业微信机器人凭证验证成功");
+    cliclack::outro("初始化完成 ✅")?;
+    Ok(())
 }
