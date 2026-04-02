@@ -47,12 +47,6 @@ pub async fn handle_call_cmd(category_name: &str, matches: &ArgMatches) -> Resul
     // Get positional arg: json_args (optional)
     let args = args.args.as_deref();
 
-    // If no arguments provided, show tool help information
-    if args.is_none() {
-        help::show_tool_help(category_name, method).await?;
-        return Ok(());
-    }
-
     let timeout_ms = if method == "get_msg_media" {
         Some(120000)
     } else {
