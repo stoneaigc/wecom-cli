@@ -11,6 +11,9 @@ keywords = ["wecom", "cli", "mcp", "wechat-work"]
 categories = ["command-line-utilities"]
 include = ["/src/**/*", "/build.rs", "/Cargo.toml", "/Cargo.lock", "/LICENSE", "/README.md"]
 
+[features]
+custom-endpoint = []
+
 [[bin]]
 name = "wecom-cli"
 path = "src/main.rs"

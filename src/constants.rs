@@ -16,7 +16,8 @@ pub mod env {
     /// Log file directory path
     pub const LOG_FILE: &str = "WECOM_CLI_LOG_FILE";
 
-    /// MCP config URL
+    /// MCP config URL (仅在启用 `custom-endpoint` feature 后使用)
+    #[cfg_attr(not(feature = "custom-endpoint"), allow(dead_code))]
     pub const MCP_CONFIG_ENDPOINT: &str = "WECOM_CLI_MCP_CONFIG_ENDPOINT";
 }
 
@@ -39,10 +40,13 @@ pub fn media_dir() -> PathBuf {
     std::env::temp_dir().join("wecom").join("media")
 }
 
-/// Return the MCP config endpoint URL (env override or the default WeCom API).
+/// Return the MCP config endpoint URL.
 pub fn mcp_config_endpoint() -> String {
-    std::env::var(env::MCP_CONFIG_ENDPOINT)
-        .unwrap_or_else(|_| DEFAULT_MCP_CONFIG_ENDPOINT.to_string())
+    #[cfg(feature = "custom-endpoint")]
+    if let Ok(url) = std::env::var(env::MCP_CONFIG_ENDPOINT) {
+        return url;
+    }
+    DEFAULT_MCP_CONFIG_ENDPOINT.to_string()
 }
 
 pub fn get_user_agent() -> String {
