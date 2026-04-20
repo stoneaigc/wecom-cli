@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 const DEFAULT_MCP_CONFIG_ENDPOINT: &str =
     "https://qyapi.weixin.qq.com/cgi-bin/aibot/cli/get_mcp_config";
 
@@ -21,26 +19,7 @@ pub mod env {
     pub const MCP_CONFIG_ENDPOINT: &str = "WECOM_CLI_MCP_CONFIG_ENDPOINT";
 }
 
-/// Return the configuration directory path (env override or `~/.config/wecom`).
-pub fn config_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var(env::CONFIG_DIR) {
-        return PathBuf::from(dir);
-    }
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".config")
-        .join("wecom")
-}
-
-/// Return the media temp directory path (env override or `<tmp>/wecom/media`).
-pub fn media_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var(env::TMP_DIR) {
-        return PathBuf::from(dir).join("media");
-    }
-    std::env::temp_dir().join("wecom").join("media")
-}
-
-/// Return the MCP config endpoint URL.
+/// Return the MCP config endpoint URL (env override or the default WeCom API).
 pub fn mcp_config_endpoint() -> String {
     #[cfg(feature = "custom-endpoint")]
     if let Ok(url) = std::env::var(env::MCP_CONFIG_ENDPOINT) {

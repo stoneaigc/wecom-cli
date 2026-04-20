@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 use serde_repr::Serialize_repr;
 use sha2::{Digest, Sha256};
 
-use crate::constants;
 use crate::crypto;
 use crate::{auth, fs_util};
+use crate::{constants, paths};
 
 // ---------------------------------------------------------------------------
 // Request
@@ -117,7 +117,7 @@ fn sha256_hex(input: &str) -> String {
 
 /// Return the file path for the encrypted MCP config cache.
 fn mcp_config_path() -> std::path::PathBuf {
-    crate::constants::config_dir().join("mcp_config.enc")
+    paths::wecom_home_dir().join("mcp_config.enc")
 }
 
 /// Read cached MCP config list from the encrypted file.

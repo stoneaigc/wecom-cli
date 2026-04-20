@@ -4,6 +4,8 @@ pub(crate) mod error;
 use anyhow::Result;
 use rand::Rng;
 
+use crate::service::categories;
+
 /// Look up the MCP URL for the given `category` (matched against `biz_type`).
 pub async fn get_mcp_url(category: &str) -> Result<String> {
     let Some(list) = config::load_mcp_config() else {
@@ -13,10 +15,18 @@ pub async fn get_mcp_url(category: &str) -> Result<String> {
         ));
     };
 
+    let permission_name = categories::get_categories()
+        .iter()
+        .find(|c| c.name == category)
+        .map(|c| c.permission_name)
+        .unwrap_or(category);
+
     let target = list
         .iter()
         .find(|item| item.biz_type.as_deref() == Some(category))
-        .ok_or_else(|| anyhow::anyhow!("当前企业暂不支持 {category} 命令"))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!("当前企业暂不支持授权机器人「{permission_name}」使用权限")
+        })?;
 
     target
         .url

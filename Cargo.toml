@@ -1,6 +1,6 @@
 [package]
 name = "wecom-cli"
-version = "0.1.5"
+version = "0.1.6-beta.0"
 edition = "2024"
 description = "The official CLI for WeCom — 企业微信命令行工具，让人类和 AI Agent 都能在终端中操作企业微信"
 license = "MIT"
@@ -21,7 +21,7 @@ path = "src/main.rs"
 [dependencies]
 tokio = { version = "1.50.0", features = ["full"] }
 anyhow = "1"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "string"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_repr = "0.1"
@@ -44,3 +44,5 @@ sanitize-filename = "0.6.0"
 tempfile = "3.27.0"
 cliclack = "0.5"
 qr2term = "0.3"
+qrcode = "0.14"
+open = "5"

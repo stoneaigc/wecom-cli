@@ -1,22 +1,48 @@
+use std::io::IsTerminal;
+
 use crate::auth;
 use crate::mcp;
 use crate::mcp::config::McpBindSource;
 use anyhow::Result;
-use clap::ArgMatches;
+use clap::{ArgMatches, Args, Command, FromArgMatches};
+
+#[derive(Args)]
+pub struct InitArgs {
+    /// 跳过交互选择，直接使用扫码方式接入
+    #[arg(long)]
+    pub noninteractive: bool,
+}
+
+pub fn build_init_cmd() -> Command {
+    InitArgs::augment_args(Command::new("init").about("初始化企业微信机器人配置"))
+        .disable_help_flag(true)
+}
 
 /// Handle the `init` subcommand: prompt for bot credentials, persist them, and verify via MCP config fetch.
-pub async fn handle_init_cmd(_matches: &ArgMatches) -> Result<()> {
+pub async fn handle_init_cmd(matches: &ArgMatches) -> Result<()> {
+    let args = InitArgs::from_arg_matches(matches)?;
+
+    if !args.noninteractive && !std::io::stderr().is_terminal() {
+        anyhow::bail!(
+            "当前环境不支持交互式操作，请使用 --noninteractive 参数：\n  {} init --noninteractive",
+            env!("CARGO_BIN_NAME")
+        );
+    }
+
     cliclack::intro("企业微信机器人初始化")?;
 
-    // 交互选择接入方式
-    let method: &str = cliclack::select("请选择企微机器人接入方式：")
-        .item("qrcode", "扫码接入（推荐）", "")
-        .item("manual", "手动输入 Bot ID 和 Secret", "")
-        .interact()?;
+    let (bot, bind_source) = if args.noninteractive {
+        (init_qrcode().await?, McpBindSource::Qrcode)
+    } else {
+        let method: &str = cliclack::select("请选择企微机器人接入方式：")
+            .item("qrcode", "扫码接入（推荐）", "")
+            .item("manual", "手动输入 Bot ID 和 Secret", "")
+            .interact()?;
 
-    let (bot, bind_source) = match method {
-        "qrcode" => (init_qrcode().await?, McpBindSource::Qrcode),
-        _ => (init_manual().await?, McpBindSource::Interactive),
+        match method {
+            "qrcode" => (init_qrcode().await?, McpBindSource::Qrcode),
+            _ => (init_manual().await?, McpBindSource::Interactive),
+        }
     };
 
     auth::set_bot_info(&bot)?;

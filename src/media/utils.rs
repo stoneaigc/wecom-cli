@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::constants::media_dir;
+use crate::{fs_util::sanitize_filename, paths};
 
 /// Maximum dedup index suffix; give up retrying once exceeded.
 const MAX_DEDUP_INDEX: u32 = 100;
@@ -37,7 +37,7 @@ pub async fn save_media(
     content_type: &str,
     data: &[u8],
 ) -> anyhow::Result<PathBuf> {
-    let dir = media_dir();
+    let dir = paths::media_dir();
 
     tokio::fs::create_dir_all(&dir).await?;
 
@@ -95,7 +95,7 @@ pub fn determine_file_name(
     media_id: Option<&str>,
     content_type: &str,
 ) -> (String, String) {
-    if let Some(name) = media_name.and_then(sanitize_file_name) {
+    if let Some(name) = media_name.and_then(sanitize_filename) {
         let path = Path::new(&name);
         let stem = path
             .file_stem()
@@ -111,7 +111,7 @@ pub fn determine_file_name(
     }
 
     let stem = media_id
-        .and_then(sanitize_file_name)
+        .and_then(sanitize_filename)
         .unwrap_or_else(|| "media".to_string());
 
     let ext = mime_guess::get_mime_extensions_str(content_type)
@@ -121,20 +121,4 @@ pub fn determine_file_name(
         .to_string();
 
     (stem, ext)
-}
-
-/// Sanitize a file name by removing illegal characters; returns `None` if the result is empty.
-fn sanitize_file_name(name: &str) -> Option<String> {
-    let options = sanitize_filename::Options {
-        truncate: true,
-        windows: true,
-        replacement: "_",
-    };
-    let sanitized = sanitize_filename::sanitize_with_options(name, options);
-    // Return None if the sanitized result is empty (all illegal characters), so the caller can fallback
-    if sanitized.is_empty() {
-        None
-    } else {
-        Some(sanitized)
-    }
 }

@@ -5,7 +5,7 @@ use anyhow::Result;
 use base64::prelude::*;
 use rand::Rng;
 
-use crate::fs_util;
+use crate::{fs_util, paths};
 
 use super::cipher;
 
@@ -18,7 +18,7 @@ const KEYRING_USER: &str = "encryption-key";
 
 /// Return the file path for the local encryption key fallback.
 pub fn encryption_key_path() -> PathBuf {
-    crate::constants::config_dir().join(".encryption_key")
+    paths::wecom_home_dir().join(".encryption_key")
 }
 
 // ---------------------------------------------------------------------------

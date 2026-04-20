@@ -1,24 +1,79 @@
 use anyhow::Result;
 use serde::Serialize;
-use serde_json::Value;
 
 use crate::{constants, mcp};
+
+#[derive(Debug)]
+pub enum JsonRpcError {
+    /// 通用 RPC 失败（无 result、isError=true 等）
+    RpcError(serde_json::Value),
+    /// JSON-RPC 协议层错误（error.code ≠ 0）
+    ApiError {
+        code: i64,
+        payload: serde_json::Value,
+    },
+    /// 响应格式不符合预期
+    MalformedResponse(serde_json::Value),
+}
+
+impl std::fmt::Display for JsonRpcError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            JsonRpcError::RpcError(res) => write!(f, "请求失败：{res}"),
+            JsonRpcError::ApiError { code, payload } => {
+                write!(f, "接口错误 (code={code})：{payload}")
+            }
+            JsonRpcError::MalformedResponse(raw) => {
+                write!(f, "响应格式异常：{raw}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for JsonRpcError {}
 
 #[derive(Debug, Clone, Serialize)]
 struct JsonRpcRequest {
     jsonrpc: &'static str,
     id: String,
     method: String,
-    params: Option<Value>,
+    params: Option<serde_json::Value>,
+}
+
+pub async fn call_tool(
+    category: &str,
+    method: &str,
+    args: serde_json::Value,
+) -> Result<serde_json::Value> {
+    let timeout_ms = if method == "get_msg_media" {
+        Some(120000)
+    } else {
+        None
+    };
+    let params = serde_json::json!({
+        "name": method,
+        "arguments": args,
+    });
+    let response = send(category, "tools/call", Some(params), timeout_ms).await?;
+
+    let Some(result) = response.get("result") else {
+        return Err(JsonRpcError::MalformedResponse(response).into());
+    };
+
+    if result.get("isError").and_then(|r| r.as_bool()) == Some(true) {
+        return Err(JsonRpcError::RpcError(response).into());
+    }
+
+    Ok(response)
 }
 
 /// Send a JSON-RPC 2.0 request to the MCP endpoint for the given category and method.
 pub async fn send(
     category: &str,
     method: &str,
-    params: Option<Value>,
+    params: Option<serde_json::Value>,
     timeout_ms: Option<i32>,
-) -> Result<Value> {
+) -> Result<serde_json::Value> {
     let mcp_url = mcp::get_mcp_url(category).await?;
 
     let body = JsonRpcRequest {
@@ -53,7 +108,13 @@ pub async fn send(
     }
 
     let body_text = response.text().await?;
-    let rpc_res = serde_json::from_str::<Value>(&body_text)?;
+    let res = serde_json::from_str::<serde_json::Value>(&body_text)?;
 
-    Ok(rpc_res)
+    if let Some(code) = res.pointer("/error/code").and_then(|c| c.as_i64()) {
+        if code != 0 {
+            return Err(JsonRpcError::ApiError { code, payload: res }.into());
+        }
+    }
+
+    Ok(res)
 }

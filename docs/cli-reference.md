@@ -5,7 +5,6 @@
 交互式配置企业微信机器人凭证，加密存储到本地。仅需执行一次。
 - 若选择手动配置 Bot ID 和 Secret，获取方式[参考](https://open.work.weixin.qq.com/help2/pc/cat?doc_id=21677)
 - 若选择扫码接入，需使用企业微信扫码创建绑定
-- 目前仅对≤10人企业开放使用，请选择合适的企业进行配置
 
 ```bash
 wecom-cli init

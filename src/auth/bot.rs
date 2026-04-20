@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use anyhow::Result;
 
-use crate::{crypto, fs_util};
+use crate::{crypto, fs_util, paths};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bot {
@@ -74,5 +74,5 @@ pub fn clear_bot_info() {
 
 /// Return the file path for the encrypted bot credentials.
 fn bot_info_path() -> std::path::PathBuf {
-    crate::constants::config_dir().join("bot.enc")
+    paths::wecom_home_dir().join("bot.enc")
 }

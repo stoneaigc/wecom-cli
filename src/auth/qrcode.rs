@@ -1,6 +1,8 @@
+use std::io::IsTerminal;
 use std::time::Duration;
 
-use anyhow::{Result, bail};
+use crate::browser;
+use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 use super::bot::Bot;
@@ -52,8 +54,70 @@ struct BotInfoPayload {
 }
 
 // ---------------------------------------------------------------------------
-// Platform code
+// Public API
 // ---------------------------------------------------------------------------
+
+/// 扫码接入完整流程：获取二维码 → 终端展示 → 轮询结果 → 返回 Bot
+pub async fn scan_qrcode_for_bot() -> Result<Bot> {
+    let client = build_client()?;
+
+    println!("正在获取二维码...");
+    let (scode, auth_url) = fetch_qrcode(&client).await?;
+
+    let qrcode_url = format!("{}?source={}&scode={}", QR_CODE_PAGE, SOURCE, scode);
+
+    println!("请打开二维码链接扫码: \n{}", qrcode_url);
+
+    println!("也可以使用企业微信扫描以下二维码：");
+    if std::io::stdout().is_terminal() {
+        render_qrcode(&auth_url)?;
+    } else {
+        render_qrcode_unicode(&auth_url)?;
+    }
+
+    // 同步在浏览器中打开二维码
+    browser::open_url_by_browser(&qrcode_url);
+
+    println!("等待扫码中...");
+
+    let (bot_id, secret) = poll_result(&client, &scode).await?;
+
+    println!("✔ 扫码成功！Bot ID 和 Secret 已自动获取。");
+
+    Ok(Bot::new(bot_id, secret))
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+fn build_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .build()
+        .context("创建 HTTP 客户端失败")
+}
+
+/// 获取二维码链接和轮询 scode
+async fn fetch_qrcode(client: &reqwest::Client) -> Result<(String, String)> {
+    let url = format!(
+        "{}?source={}&plat={}",
+        QR_GENERATE_URL,
+        SOURCE,
+        get_plat_code()
+    );
+
+    let response: GenerateResponse = client.get(&url).send().await?.json().await?;
+
+    let Some(data) = response.data.as_ref() else {
+        bail!("获取二维码失败，响应格式异常");
+    };
+
+    let (Some(scode), Some(auth_url)) = (&data.scode, &data.auth_url) else {
+        bail!("获取二维码失败，响应格式异常");
+    };
+
+    Ok((scode.to_string(), auth_url.to_string()))
+}
 
 fn get_plat_code() -> u8 {
     if cfg!(target_os = "macos") {
@@ -67,40 +131,26 @@ fn get_plat_code() -> u8 {
     }
 }
 
-// ---------------------------------------------------------------------------
-// HTTP helpers
-// ---------------------------------------------------------------------------
-
-fn build_client() -> Result<reqwest::Client> {
-    Ok(reqwest::Client::builder().build()?)
-}
-
-/// 获取二维码链接和轮询 scode
-async fn fetch_qrcode(client: &reqwest::Client) -> Result<(String, String)> {
-    let url = format!(
-        "{}?source={}&plat={}",
-        QR_GENERATE_URL,
-        SOURCE,
-        get_plat_code()
-    );
-
-    let resp: GenerateResponse = client.get(&url).send().await?.json().await?;
-
-    let Some(data) = resp.data.as_ref() else {
-        bail!("获取二维码失败，响应格式异常");
-    };
-
-    let (Some(scode), Some(auth_url)) = (&data.scode, &data.auth_url) else {
-        bail!("获取二维码失败，响应格式异常");
-    };
-
-    Ok((scode.to_string(), auth_url.to_string()))
-}
-
-/// 在终端渲染二维码
+/// 在终端渲染二维码（TTY，带 ANSI 色彩）
 fn render_qrcode(url: &str) -> Result<()> {
     println!();
     qr2term::print_qr(url).map_err(|e| anyhow::anyhow!("二维码渲染失败: {e}"))?;
+    Ok(())
+}
+
+/// 在 non-TTY 环境下用纯 Unicode 半块字符渲染二维码（无 ANSI escape）
+fn render_qrcode_unicode(url: &str) -> Result<()> {
+    use qrcode::QrCode;
+    use qrcode::render::unicode::Dense1x2;
+
+    let code = QrCode::new(url).map_err(|e| anyhow::anyhow!("二维码渲染失败: {e}"))?;
+    let string = code
+        .render::<Dense1x2>()
+        .dark_color(Dense1x2::Dark)
+        .light_color(Dense1x2::Light)
+        .build();
+    println!();
+    println!("{}", string);
     Ok(())
 }
 
@@ -114,9 +164,9 @@ async fn poll_result(client: &reqwest::Client, scode: &str) -> Result<(String, S
             bail!("扫码超时（5 分钟），请重试。");
         }
 
-        let resp: QueryResponse = client.get(&url).send().await?.json().await?;
+        let response: QueryResponse = client.get(&url).send().await?.json().await?;
 
-        if let Some(data) = &resp.data {
+        if let Some(data) = &response.data {
             if data.status.as_deref() == Some("success") {
                 let Some(bot_info) = &data.bot_info else {
                     anyhow::bail!("扫码成功但未获取到 Bot 信息");
@@ -131,31 +181,4 @@ async fn poll_result(client: &reqwest::Client, scode: &str) -> Result<(String, S
 
         tokio::time::sleep(POLL_INTERVAL).await;
     }
-}
-
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
-/// 扫码接入完整流程：获取二维码 → 终端展示 → 轮询结果 → 返回 Bot
-pub async fn scan_qrcode_for_bot() -> Result<Bot> {
-    let client = build_client()?;
-
-    println!("正在获取二维码...");
-    let (scode, auth_url) = fetch_qrcode(&client).await?;
-
-    println!("请使用企业微信扫描以下二维码：");
-    render_qrcode(&auth_url)?;
-
-    println!(
-        "也可打开二维码链接扫码: {}?source={}&scode={}",
-        QR_CODE_PAGE, SOURCE, scode
-    );
-    println!("等待扫码中...");
-
-    let (bot_id, secret) = poll_result(&client, &scode).await?;
-
-    println!("✔ 扫码成功！Bot ID 和 Secret 已自动获取。");
-
-    Ok(Bot::new(bot_id, secret))
 }
